@@ -1,0 +1,67 @@
+name: install-unravel
+
+on: 
+  workflow_dispatch:  
+    inputs:
+      server_ip:
+        description: 'The IP of the server'
+        required: true
+        default: '172.36.25.12'
+      unravel_artifact:
+        description: 'The URL of the unravel tar.gz file'
+        required: true
+        default: 'http://cerdo.unraveldata.com:8081/artifactory/dist-internal/unravel/hotfix/4.7.9.7/unravel-4.7.9.7-hotfix.9121.tar.gz'
+      unravel_directory:
+        description: 'Unravel installation path'
+        required: true
+        default: '/opt/'
+
+jobs:
+  install_unravel:
+    runs-on: [self-hosted, selfserve]
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Unravel
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ github.event.inputs.server_ip }}
+          username: root
+          port: 22
+          password: ${{ secrets.DC_PASSWORD }}
+          timeout: 60m
+          command_timeout: 60m
+          script: |
+            # Extract filename and version
+            filename=$(basename "${{ github.event.inputs.unravel_artifact }}")
+            echo "File name: $filename"
+            version=$(echo "$filename" | sed -n 's/unravel-\(.*\)\.tar\.gz/\1/p')
+            echo "Extracted version: $version"
+
+            # Download and install Unravel
+            wget "${{ github.event.inputs.unravel_artifact }}" -O "/tmp/$filename"
+            tar -xvf "/tmp/$filename" -C "${{ github.event.inputs.unravel_directory }}"
+
+            # Stop and activate new version
+            sudo -u unravel bash -c "
+              ${github.event.inputs.unravel_directory}/unravel/manager stop
+              ${github.event.inputs.unravel_directory}/unravel/manager activate $version --skip-precheck
+            "
+
+            # Wait for service to be ready
+            echo 'Waiting for services to start...'
+            for i in {1..30}; do
+              sleep 10
+              if sudo -u unravel bash -c "${github.event.inputs.unravel_directory}/unravel/manager status" | grep -q 'running'; then
+                echo 'Unravel services are running!'
+                break
+              fi
+              echo 'Still waiting...'
+            done
+
+            # Final service start
+            sudo -u unravel bash -c "${github.event.inputs.unravel_directory}/unravel/manager start"
+            echo "Unravel installation completed successfully!"
