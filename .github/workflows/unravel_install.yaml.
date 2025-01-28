@@ -1,0 +1,37 @@
+name: install-unravel
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_ip:
+        description: 'The IP of the server'
+        required: true
+        default: '172.36.25.12'
+      unravel_artifact:
+        description: 'The URL of the unravel file'
+        required: true
+        default: 'http://cerdo.unraveldata.com:8081/artifactory/dist-internal/unravel/hotfix/4.7.9.7/unravel-4.7.9.7-hotfix.9121.tar.gz'
+      unravel_directory:
+        description: 'Unravel installed path'
+        required: true
+        default: '/opt/'
+
+jobs:
+  ssh_job:
+    runs-on: [self-hosted, selfserve]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download and install Unravel
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ github.event.inputs.server_ip }}
+          username: root
+          port: 22
+          password: ${{ secrets.DC_PASSWORD }}
+          script: |
+            sudo su - unravel
+            filename=$(basename ${{ github.event.inputs.unravel_artifact }})
+            wget ${{ github.event.inputs.unravel_artifact }} -O /tmp/$filename
+            tar xvf /tmp/$filename -C ${{ github.event.inputs.unravel_directory }}
